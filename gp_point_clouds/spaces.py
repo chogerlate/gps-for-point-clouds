@@ -7,12 +7,11 @@ import numpy as np
 import robust_laplacian
 import scipy.sparse.linalg as sla
 
-# remove import of ConvertEigenvectorsToEigenfunctions below for the new version of geometric_kernels and remove function get_eigenfunctions as well
-from geometric_kernels.spaces.base import (
-    ConvertEigenvectorsToEigenfunctions,
-    DiscreteSpectrumSpace,
+from geometric_kernels.spaces.base import DiscreteSpectrumSpace
+from geometric_kernels.spaces.eigenfunctions import (
+    Eigenfunctions,
+    EigenfunctionsFromEigenvectors,
 )
-from geometric_kernels.spaces.eigenfunctions import Eigenfunctions
 
 
 class PointCloud(DiscreteSpectrumSpace):
@@ -78,9 +77,9 @@ class PointCloud(DiscreteSpectrumSpace):
         """
         First `num` eigenfunctions of the Laplace-Beltrami operator on the Mesh.
         :param num: number of eigenfunctions returned
-        :return: eigenfu [Nv, num]
+        :return: eigenfunctions [Nv, num]
         """
-        eigenfunctions = ConvertEigenvectorsToEigenfunctions(self.get_eigenvectors(num))
+        eigenfunctions = EigenfunctionsFromEigenvectors(self.get_eigenvectors(num))
         return eigenfunctions
 
     @property

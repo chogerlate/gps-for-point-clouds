@@ -2,10 +2,7 @@ import time
 import torch
 import gpytorch
 import numpy as np
-# changes can be done below for changes in the new geometric_kernels github
-from geometric_kernels.frontends.pytorch.gpytorch import GPytorchGeometricKernel
-# below is for the new version of geometric_kernels
-# from geometric_kernels.frontends.gpytorch import GPyTorchGeometricKernel
+from geometric_kernels.frontends.gpytorch import GPyTorchGeometricKernel
 from dgl.geometry import farthest_point_sampler
 from gp_point_clouds.spaces import PointCloud
 from gp_point_clouds.model import GPModel
@@ -70,7 +67,7 @@ class SubsetAlgorithm:
             self.point_cloud, truncation_level, device=self.device
         )
         self.geometric_kernel = gpytorch.kernels.ScaleKernel(
-            GPytorchGeometricKernel(base_kernel)
+            GPyTorchGeometricKernel(base_kernel)
         ).to(self.device)
         self.geometric_kernel.double()
 
