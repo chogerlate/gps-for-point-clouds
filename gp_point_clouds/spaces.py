@@ -12,6 +12,7 @@ from geometric_kernels.spaces.eigenfunctions import (
     Eigenfunctions,
     EigenfunctionsFromEigenvectors,
 )
+from geometric_kernels.lab_extras import dtype_integer
 
 
 class PointCloud(DiscreteSpectrumSpace):
@@ -19,12 +20,17 @@ class PointCloud(DiscreteSpectrumSpace):
     A representation of a point cloud.
     """
 
-    def __init__(self, vertices: np.ndarray):
+    def __init__(self, vertices):
         """
         :param vertices: A [Nv, D] array of vertex coordinates, where Nv is the number of vertices,
             D is the dimention of the embedding space (D must be either 2 or 3).
+            Can be a numpy array or torch tensor.
         """
-        self._vertices = vertices
+        # Convert torch tensor to numpy if needed
+        if hasattr(vertices, 'cpu'):
+            self._vertices = vertices.cpu().numpy()
+        else:
+            self._vertices = np.asarray(vertices)
         self._eigenvalues = None
         self._eigenfunctions = None
         self.cache: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
@@ -40,7 +46,7 @@ class PointCloud(DiscreteSpectrumSpace):
         :return: A Tuple of eigenvectors [Nv, num], eigenvalues [num, 1]
         """
         if num not in self.cache:
-            L, M = robust_laplacian.point_cloud_laplacian(self.vertices.cpu().numpy())
+            L, M = robust_laplacian.point_cloud_laplacian(self.vertices)
             evals, evecs = sla.eigsh(L, num, M, sigma=1e-8)
 
             # First eigenvalue can be very small (<1e-5), whereas typical values are 1e2-1e3.
@@ -99,3 +105,30 @@ class PointCloud(DiscreteSpectrumSpace):
         D is the dimention of the embedding space (D must be either 2 or 3).
         """
         return self._vertices
+
+    def random(self, key, number):
+        """
+        Sample uniformly random vertex indices.
+        
+        :param key: Random state key
+        :param number: Number of samples to draw
+        :return: Tuple of (key, random_vertices) where random_vertices are indices
+        """
+        key, random_vertices = B.randint(
+            key, dtype_integer(key), number, 1, lower=0, upper=self.num_vertices
+        )
+        return key, random_vertices
+
+    @property
+    def element_shape(self):
+        """
+        :return: [1]
+        """
+        return [1]
+
+    @property
+    def element_dtype(self):
+        """
+        :return: B.Int
+        """
+        return B.Int

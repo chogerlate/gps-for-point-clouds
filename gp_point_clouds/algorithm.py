@@ -73,9 +73,9 @@ class SubsetAlgorithm:
 
         # Initialise likelihood
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood(
-            noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+            noise_constraint=gpytorch.constraints.GreaterThan(1e-4)
         ).to(self.device)
-        self.likelihood.noise = torch.tensor(1e-5)
+        self.likelihood.noise = torch.tensor(1e-2)
         self.likelihood.double()
 
         # Initialise model and hyperparameters
@@ -84,7 +84,7 @@ class SubsetAlgorithm:
         ).to(self.device)
         hypers = {
             "covar_module.base_kernel.lengthscale": torch.tensor(1.0),
-            "covar_module.base_kernel.nu": torch.tensor(10000),
+            "covar_module.base_kernel.nu": torch.tensor(2.5),
         }  # NOTE - EQ (i.e. 5/2) seems to capture curvature best, but can try 1/2 and 3/2 too
         self.model.initialize(**hypers)
         self.model.double()
@@ -98,17 +98,18 @@ class SubsetAlgorithm:
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
 
         print("Estimating hyperparameters...")
-        for i in range(self.n_iter + 1):
-            optimizer.zero_grad()
-            output = self.model(self.X_train)
-            loss = -mll(output, self.y_train)
-            loss.backward()
-            optimizer.step()
-            if i % 25 == 0:
-                print("Iteration %d" % i)
-                print("LS ", self.model.covar_module.base_kernel.lengthscale.item())
-                print("Noise ", self.model.likelihood.noise.item())
-                print()
+        with gpytorch.settings.cholesky_jitter(1e-3):
+            for i in range(self.n_iter + 1):
+                optimizer.zero_grad()
+                output = self.model(self.X_train)
+                loss = -mll(output, self.y_train)
+                loss.backward()
+                optimizer.step()
+                if i % 25 == 0:
+                    print("Iteration %d" % i)
+                    print("LS ", self.model.covar_module.base_kernel.lengthscale.item())
+                    print("Noise ", self.model.likelihood.noise.item())
+                    print()
         print("Hyperparameter estimation complete.")
 
         self.model.eval()
@@ -155,19 +156,41 @@ class SubsetAlgorithm:
             y_i = self.y[active_set_idx]
             y_r = self.y[remainder_set_idx]
             K_ri = self.model.covar_module(X_r, X_i).to_dense()
-            K_rr = self.model.covar_module(X_r, X_r).to_dense()
+            
+            # Efficiently compute diagonal elements needed for selection metric
+            # Avoid full K_rr computation which causes OOM
+            
+            # Manual computation to bypass plum dispatch issue in GPyTorchGeometricKernel
+            geo_kernel_wrapper = self.model.covar_module.base_kernel
+            params = {
+                "lengthscale": geo_kernel_wrapper.lengthscale.flatten(),
+                "nu": geo_kernel_wrapper.nu.flatten()
+            }
+            # Call K_diag_safe on my custom kernel directly to avoid plum dispatch issues
+            K_rr_diag_unscaled = geo_kernel_wrapper.base_kernel.K_diag_safe(params, X_r)
+            # Apply ScaleKernel outputscale
+            K_rr_diag = self.model.covar_module.outputscale * K_rr_diag_unscaled
+            
             K_ii = self.model.covar_module(X_i, X_i).to_dense()
             K_ii_plus_noise = (
                 K_ii
                 + torch.eye(K_ii.shape[0], device=self.device) * self.likelihood.noise
             )
-            K_ii_plus_noise_inv = torch.cholesky_inverse(K_ii_plus_noise)
-            mu_t = K_ri.matmul(K_ii_plus_noise_inv).matmul(y_i)
-            sigma_t = K_rr - K_ri.matmul(K_ii_plus_noise_inv).matmul(K_ri.T)
-
-            # 4. Compute selection metric and select next 10 observations (you can also increase this number independent of initial_set_size)
-            # TODO - two approaches for same thing: one inside loop one outside, FIX IT!
-            selection_metric = torch.sqrt(torch.diag(sigma_t)) + torch.abs(mu_t - y_r)
+            L = torch.linalg.cholesky(K_ii_plus_noise)
+            K_ii_plus_noise_inv = torch.cholesky_inverse(L)
+            
+            # Compute mu_t and sigma_t_diag efficiently
+            Q = K_ri.matmul(K_ii_plus_noise_inv)
+            mu_t = Q.matmul(y_i)
+            
+            # diag(K_ri @ K_ii_inv @ K_ri.T) = sum((K_ri @ K_ii_inv_sqrt)**2) 
+            # = sum(Q * K_ri, dim=1) since Q = K_ri @ K_ii_inv and K_ii_inv is symmetric
+            term2_diag = torch.sum(Q * K_ri, dim=1)
+            
+            sigma_t_diag = K_rr_diag - term2_diag
+            
+            # 4. Compute selection metric
+            selection_metric = torch.sqrt(sigma_t_diag) + torch.abs(mu_t - y_r)
             set_size = self.initial_set_size + int(self.initial_set_size / 5) * i
             if set_size + active_set_size >= self.target_num_points:
                 set_size = self.target_num_points - active_set_size

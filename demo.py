@@ -2,6 +2,7 @@ import time
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 from gp_point_clouds.algorithm import SubsetAlgorithm
 from gp_point_clouds.data import get_data_jak, get_data_cc
 
@@ -136,9 +137,19 @@ plt.title(
 )
 plt.show()
 
+# Ensure results directory exists
+results_dir = "/content/gps-for-point-clouds/resources/results/"
+if not os.path.exists(results_dir):
+    try:
+        os.makedirs(results_dir)
+    except OSError:
+        # Fallback to relative path if absolute path fails (e.g. on Windows)
+        results_dir = "resources/results/"
+        os.makedirs(results_dir, exist_ok=True)
+
 if mode == 0:
     np.savetxt(
-        "resources/results/"
+        results_dir
         + file_name.replace(".ply", "_")
         + str(simp_ratio)
         + ".xyz",
@@ -146,7 +157,7 @@ if mode == 0:
         delimiter=" ",
     )
     np.savez(
-        "resources/results/"
+        results_dir
         + file_name.replace(".ply", "_")
         + str(simp_ratio)
         + ".npz",
@@ -157,7 +168,7 @@ if mode == 0:
     )
 else:
     np.savetxt(
-        "resources/results/"
+        results_dir
         + file_name.replace(".ply", "_")
         + str(target_num_points)
         + ".xyz",
@@ -165,7 +176,7 @@ else:
         delimiter=" ",
     )
     np.savez(
-        "resources/results/"
+        results_dir
         + file_name.replace(".ply", "_")
         + str(target_num_points)
         + ".npz",
@@ -180,5 +191,5 @@ import open3d as o3d
 
 pcd = o3d.geometry.PointCloud()
 pcd.points = o3d.utility.Vector3dVector(simp_coords)
-o3d.io.write_point_cloud("resources/results/" + file_name.replace(".ply", "_") + str(target_num_points) + ".ply", pcd)
+o3d.io.write_point_cloud(results_dir + file_name.replace(".ply", "_") + str(target_num_points) + ".ply", pcd)
 
