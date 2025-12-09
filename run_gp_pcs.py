@@ -39,18 +39,16 @@ def load_data(file_path, neigh_size, device="cpu"):
     radius = torch.sqrt(surface_per_point * neigh_size)
     
     print(f"Computing features with radius: {radius.item()}...")
-    curv = (
-        torch.from_numpy(
-            compute_features(
-                coords.cpu().numpy(),
-                search_radius=radius.item(),
-                feature_names=["surface_variation"],
-            )
-        )
-        .double()
-        .squeeze(1)
-        .to(device)
+    # Use torch.as_tensor to tolerate any numpy subclass returned by jakteristics
+    curv_np = np.asarray(
+        compute_features(
+            coords.cpu().numpy(),
+            search_radius=radius.item(),
+            feature_names=["surface_variation"],
+        ),
+        dtype=np.float64,
     )
+    curv = torch.as_tensor(curv_np, device=device, dtype=torch.double).squeeze(1)
     
     return coords, curv, faces, colors
 
@@ -160,11 +158,11 @@ def main():
     npz_path = output_base + ".npz"
     np.savez(
         npz_path,
-        org_coords=coords.cpu().numpy(),
-        org_faces=faces.cpu().numpy() if faces is not None else None,
-        simp_coords=simp_coords,
-        org_curv=curv.cpu().numpy(),
-        original_indices=original_indices,
+        org_coords=np.asarray(coords.cpu().numpy()),
+        org_faces=np.asarray(faces.cpu().numpy()) if faces is not None else None,
+        simp_coords=np.asarray(simp_coords),
+        org_curv=np.asarray(curv.cpu().numpy()),
+        original_indices=np.asarray(original_indices),
     )
     print(f"Saved NPZ to {npz_path}")
 

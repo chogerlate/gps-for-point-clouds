@@ -203,12 +203,10 @@ class SubsetAlgorithm:
                     remainder_set_idx[idx_to_remove_from_remainder_set.tolist()],
                 )
             )
-            remainder_set_idx = remainder_set_idx[
-                np.delete(
-                    np.arange(len(remainder_set_idx)),
-                    idx_to_remove_from_remainder_set.tolist(),
-                )
-            ]
+            # Drop selected indices from remainder set using torch mask to avoid numpy dtype issues
+            mask = torch.ones(len(remainder_set_idx), device=self.device, dtype=torch.bool)
+            mask[idx_to_remove_from_remainder_set] = False
+            remainder_set_idx = remainder_set_idx[mask]
             active_set_size = active_set_idx.shape[0]
             i = +1
 

@@ -9,6 +9,8 @@ class MaternKarhunenLoeveKernelDeviceAgnostic(MaternKarhunenLoeveKernel):
     def __init__(self, space, num_eigenfunctions, device):
         super().__init__(space, num_eigenfunctions)
         self.device = device
+        # Keep an explicit copy of the truncation level for downstream use
+        self._num_eigenfunctions = num_eigenfunctions
 
     @staticmethod
     def spectrum(
@@ -115,16 +117,22 @@ class MaternKarhunenLoeveKernelDeviceAgnostic(MaternKarhunenLoeveKernel):
         def get_eigenfunctions_safe(indices):
             is_torch = hasattr(indices, 'cpu')
             if is_torch:
-                # Move to CPU numpy to avoid plum dispatch error in library
-                indices_np = indices.detach().cpu().numpy().astype(int) # Ensure int for indices
-                if indices_np.ndim == 1:
-                    indices_np = indices_np[:, None]
-                # Call library function
-                ef_np = self.eigenfunctions(indices_np, **kwargs)
-                # Convert back to torch on correct device
-                # Ensure we match dtype of weights/params if possible, or float
-                # Usually eigenfunctions are float
-                return torch.tensor(ef_np, device=indices.device, dtype=weights.dtype if hasattr(weights, 'dtype') else torch.float64)
+                # Move to CPU numpy and ensure plain int indices
+                indices_np = indices.detach().cpu().numpy()
+                # Flatten then cast to int64 to avoid float/object dtypes from upstream
+                idx_flat = np.asarray(indices_np, dtype=np.int64).reshape(-1)
+
+                # Bypass geometric_kernels eigenfunctions dispatch (fails on numpy Int64DType)
+                # by directly gathering precomputed eigenvectors.
+                eigvecs = self.space.get_eigenvectors(self._num_eigenfunctions)  # [Nv, L]
+                ef_np = eigvecs[idx_flat]  # [N, L]
+
+                # Convert back to torch on correct device/dtype
+                return torch.tensor(
+                    ef_np,
+                    device=indices.device,
+                    dtype=weights.dtype if hasattr(weights, 'dtype') else torch.float64,
+                )
             else:
                 return self.eigenfunctions(indices, **kwargs)
 
@@ -184,11 +192,15 @@ class MaternKarhunenLoeveKernelDeviceAgnostic(MaternKarhunenLoeveKernel):
         def get_eigenfunctions_safe(indices):
             is_torch = hasattr(indices, 'cpu')
             if is_torch:
-                indices_np = indices.detach().cpu().numpy().astype(int)
-                if indices_np.ndim == 1:
-                    indices_np = indices_np[:, None]
-                ef_np = self.eigenfunctions(indices_np, **kwargs)
-                return torch.tensor(ef_np, device=indices.device, dtype=weights.dtype if hasattr(weights, 'dtype') else torch.float64)
+                indices_np = indices.detach().cpu().numpy()
+                idx_flat = np.asarray(indices_np, dtype=np.int64).reshape(-1)
+                eigvecs = self.space.get_eigenvectors(self._num_eigenfunctions)  # [Nv, L]
+                ef_np = eigvecs[idx_flat]  # [N, L]
+                return torch.tensor(
+                    ef_np,
+                    device=indices.device,
+                    dtype=weights.dtype if hasattr(weights, 'dtype') else torch.float64,
+                )
             else:
                 return self.eigenfunctions(indices, **kwargs)
 

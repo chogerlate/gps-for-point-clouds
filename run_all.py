@@ -112,7 +112,7 @@ for cloud in clouds:
             initial_set_size,
             device,
         )
-        simp_coords, simp_loop_time = alg.run()
+        simp_coords, simp_loop_time, _ = alg.run()
         simp_time = time.time() - simp_start
         total_time = simp_time + curv_time
 

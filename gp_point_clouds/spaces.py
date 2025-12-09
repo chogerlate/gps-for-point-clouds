@@ -7,6 +7,12 @@ import numpy as np
 import robust_laplacian
 import scipy.sparse.linalg as sla
 
+# Optional torch import; keeps conversion robust without hard dependency at import time
+try:
+    import torch
+except ImportError:
+    torch = None
+
 from geometric_kernels.spaces.base import DiscreteSpectrumSpace
 from geometric_kernels.spaces.eigenfunctions import (
     Eigenfunctions,
@@ -26,11 +32,11 @@ class PointCloud(DiscreteSpectrumSpace):
             D is the dimention of the embedding space (D must be either 2 or 3).
             Can be a numpy array or torch tensor.
         """
-        # Convert torch tensor to numpy if needed
-        if hasattr(vertices, 'cpu'):
-            self._vertices = vertices.cpu().numpy()
-        else:
-            self._vertices = np.asarray(vertices)
+        # Convert torch tensor to plain numpy for robust_laplacian type check
+        if torch is not None and torch.is_tensor(vertices):
+            vertices = vertices.detach().cpu().numpy()
+        # Ensure a base ndarray (not numpy subclasses)
+        self._vertices = np.asarray(vertices, dtype=np.float64)
         self._eigenvalues = None
         self._eigenfunctions = None
         self.cache: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
